@@ -26,7 +26,6 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 			return true
 		}
 
-		// TODO: iterate over all the callExpr args
 		// Step 3: is the callback a function literal?
 		callback, ok := callExpr.Args[0].(*ast.FuncLit)
 		if !ok {
@@ -62,6 +61,38 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 		}
 
 		// Step 5: gather all captured variables in the body
+		var capturedVariables []*ast.Ident
+		ast.Inspect(callback.Body, func(node ast.Node) bool {
+			switch node.(type) {
+			case *ast.Ident:
+				// Is it a variable?
+				ident := node.(*ast.Ident)
+				if ident.Obj != nil && ident.Obj.Kind == ast.Var {
+					// Was this declared outside the block?
+					if ident.Obj.Decl != nil {
+						switch ident.Obj.Decl.(type) {
+						case *ast.Field, *ast.AssignStmt:
+							declPos := ident.Obj.Decl.(ast.Node).Pos()
+							if declPos < callback.Pos() {
+								capturedVariables = append(capturedVariables, ident)
+							}
+						}
+						// these may not be variable declarations?
+						// Scope; or nil
+						// XxxSpec,
+						// FuncDecl,
+						// LabeledStmt,
+					}
+					// capturedVariables = append(capturedVariables, ident)
+				}
+			}
+			return true
+		})
+
+		for _, captured := range capturedVariables {
+			pass.Reportf(captured.Pos(), "captured variable %s", captured.Name)
+		}
+
 		// var capturedVariables []*ast.Ident
 		// ast.Inspect(callback.Body, func(node ast.Node) bool {
 		// 	if !IsFunctionLiteral(node) {
