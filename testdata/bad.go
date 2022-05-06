@@ -20,5 +20,6 @@ func main() {
 	outer := MyImpl{}
 	doThing(func(inner MyInterface) {
 		outer.Do() // should be inner.Do()
+		inner.Do()
 	})
 }
