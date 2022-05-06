@@ -1,7 +1,10 @@
 package main
 
-import "golang.org/x/tools/go/analysis/singlechecker"
+import (
+	"github.com/dgunay/transaction-handle/transaction"
+	"golang.org/x/tools/go/analysis/singlechecker"
+)
 
 func main() {
-	singlechecker.Main(transaction.FindPossiblyUnintentionalInterfaceCaptures)
+	singlechecker.Main(transaction.PossiblyUnintentionalInterfaceCaptureAnalyzer)
 }
