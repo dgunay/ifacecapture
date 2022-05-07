@@ -66,9 +66,13 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 
 				expr := node.(*ast.CallExpr).Fun
 				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
-					capturedCall.ProcessSelExpr(selExpr)
+					err := capturedCall.ProcessSelExpr(selExpr)
+					if err == nil {
+						capturedCalls = append(capturedCalls, capturedCall)
+					} else {
+						// TODO: report or log error
+					}
 				}
-				capturedCalls = append(capturedCalls, capturedCall)
 			}
 			return true
 		})
