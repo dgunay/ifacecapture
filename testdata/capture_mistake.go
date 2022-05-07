@@ -25,9 +25,11 @@ type HasMyImpl struct {
 func main() {
 	outer := MyImpl{}
 	outer2 := HasMyImpl{A: MyImpl{}}
+	outer3 := struct{ B HasMyImpl }{B: HasMyImpl{A: MyImpl{}}}
 	doThing(func(inner MyInterface) {
-		outer.Do()    // want "captured variable outer implements interface MyInterface"
-		outer2.A.Do() // want "captured variable outer2.A implements interface MyInterface"
+		outer.Do()      // want "captured variable outer implements interface MyInterface"
+		outer2.A.Do()   // want "captured variable outer2.A implements interface MyInterface"
+		outer3.B.A.Do() // want "captured variable outer3.B.A implements interface MyInterface"
 		inner.Do()
 	})
 }

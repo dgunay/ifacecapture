@@ -57,31 +57,25 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 		}
 
 		// Step 5: gather all captured variables in the body
-		var capturedVariables []*ast.Ident
+		// Get all CallExprs with receivers
+		capturedCalls := []CallViaReceiver{}
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
 			switch node.(type) {
-			case *ast.Ident:
-				// Is it a variable?
-				ident := node.(*ast.Ident)
-				if ident.Obj != nil && ident.Obj.Kind == ast.Var {
-					// Was this declared outside the callback?
-					if ident.Obj.Decl != nil {
-						switch ident.Obj.Decl.(type) {
-						case *ast.Field, *ast.AssignStmt:
-							declPos := ident.Obj.Decl.(ast.Node).Pos()
-							if declPos < callback.Pos() {
-								capturedVariables = append(capturedVariables, ident)
-							}
-						}
-					}
+			case *ast.CallExpr:
+				capturedCall := NewCallViaReceiver()
+
+				expr := node.(*ast.CallExpr).Fun
+				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
+					capturedCall.ProcessSelExpr(selExpr)
 				}
+				capturedCalls = append(capturedCalls, capturedCall)
 			}
 			return true
 		})
 
 		// Do any of them implement interfaces in the param list?
-		for _, captured := range capturedVariables {
-			capturedType := pass.TypesInfo.TypeOf(captured)
+		for _, capturedCall := range capturedCalls {
+			capturedType := pass.TypesInfo.TypeOf(capturedCall.Receiver())
 
 			if !IsPointerType(capturedType) {
 				// Prevents false negatives from captured variables that are
@@ -93,9 +87,9 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
 				if types.Implements(capturedType, ifaceType) {
 					pass.Reportf(
-						captured.Pos(),
+						capturedCall.Receiver().Pos(),
 						"captured variable %s implements interface %s",
-						captured.Name, param.Interface.Name,
+						capturedCall.String(), param.Interface.Name,
 					)
 				}
 
