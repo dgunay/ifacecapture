@@ -3,6 +3,7 @@ package ifacecapture
 import (
 	"go/ast"
 	"go/types"
+	"log"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -57,24 +58,30 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 		}
 
 		// Step 5: gather all captured variables in the body
+		// Get all CallExprs with receivers
 		var capturedVariables []*ast.Ident
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
 			switch node.(type) {
-			case *ast.Ident:
-				// Is it a variable?
-				ident := node.(*ast.Ident)
-				if ident.Obj != nil && ident.Obj.Kind == ast.Var {
-					// Was this declared outside the callback?
-					if ident.Obj.Decl != nil {
-						switch ident.Obj.Decl.(type) {
-						case *ast.Field, *ast.AssignStmt:
-							declPos := ident.Obj.Decl.(ast.Node).Pos()
-							if declPos < callback.Pos() {
-								capturedVariables = append(capturedVariables, ident)
-							}
-						}
-					}
-				}
+			case *ast.CallExpr:
+				callExpr := node.(*ast.CallExpr)
+				log.Printf("callExpr: %+v", callExpr)
+
+				// Does the
+				// case *ast.Ident:
+				// 	// Is it a variable?
+				// 	ident := node.(*ast.Ident)
+				// 	if ident.Obj != nil && ident.Obj.Kind == ast.Var {
+				// 		// Was this declared outside the callback?
+				// 		if ident.Obj.Decl != nil {
+				// 			switch ident.Obj.Decl.(type) {
+				// 			case *ast.Field, *ast.AssignStmt:
+				// 				declPos := ident.Obj.Decl.(ast.Node).Pos()
+				// 				if declPos < callback.Pos() {
+				// 					capturedVariables = append(capturedVariables, ident)
+				// 				}
+				// 			}
+				// 		}
+				// 	}
 			}
 			return true
 		})
