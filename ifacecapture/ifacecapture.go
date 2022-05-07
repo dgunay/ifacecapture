@@ -3,7 +3,6 @@ package ifacecapture
 import (
 	"go/ast"
 	"go/types"
-	"log"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -59,36 +58,63 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
-		var capturedVariables []*ast.Ident
+		type CapturedCall struct {
+			Selectors []*ast.Ident
+			Receiver  *ast.Ident
+		}
+
+		capturedCalls := []CapturedCall{}
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
 			switch node.(type) {
 			case *ast.CallExpr:
-				callExpr := node.(*ast.CallExpr)
-				log.Printf("callExpr: %+v", callExpr)
+				capturedCall := CapturedCall{Selectors: []*ast.Ident{}}
 
-				// Does the
-				// case *ast.Ident:
-				// 	// Is it a variable?
-				// 	ident := node.(*ast.Ident)
-				// 	if ident.Obj != nil && ident.Obj.Kind == ast.Var {
-				// 		// Was this declared outside the callback?
-				// 		if ident.Obj.Decl != nil {
-				// 			switch ident.Obj.Decl.(type) {
-				// 			case *ast.Field, *ast.AssignStmt:
-				// 				declPos := ident.Obj.Decl.(ast.Node).Pos()
-				// 				if declPos < callback.Pos() {
-				// 					capturedVariables = append(capturedVariables, ident)
-				// 				}
-				// 			}
-				// 		}
-				// 	}
+				callExpr := node.(*ast.CallExpr)
+
+				// FIXME: we're not trying to do anything conceptually hard, this
+				// algorithm just looks terrible because I am not great at using
+				// Go's AST inspection API yet. Simplify it.
+				// A call will look like this:
+				// ident1.ident2.theMethod(...)
+				// We start from x: ident2 and sel: theMethod
+				// then it will be x: ident1 and sel: ident2
+				// We want to capture ident2 as an Ident since it is the receiver,
+				// but save the rest of the chain as a string for diagnostic
+				// purposes.
+				expr := callExpr.Fun
+				endOfSelChain := false
+				for !endOfSelChain {
+					// processSelExpr(&capturedCall, expr.(*ast.SelectorExpr))
+					if selExpr, ok := expr.(*ast.SelectorExpr); ok {
+						if capturedCall.Receiver == nil {
+							if receiver, ok := selExpr.X.(*ast.Ident); ok {
+								capturedCall.Receiver = receiver
+							} else if selExpr.X.(*ast.SelectorExpr) != nil {
+								capturedCall.Receiver = selExpr.X.(*ast.SelectorExpr).Sel
+								selExpr.X = selExpr.X.(*ast.SelectorExpr).X // Skip one since we took it as the receiver
+							}
+						} else {
+							capturedCall.Selectors = append(capturedCall.Selectors, selExpr.Sel)
+						}
+						expr = selExpr.X
+					} else if ident, ok := expr.(*ast.Ident); ok {
+						if ident != capturedCall.Receiver {
+							capturedCall.Selectors = append(capturedCall.Selectors, ident)
+						}
+						endOfSelChain = true
+					} else {
+						panic("unexpected")
+					}
+				}
+				capturedCalls = append(capturedCalls, capturedCall)
 			}
 			return true
 		})
 
+		// TODO: uncomment
 		// Do any of them implement interfaces in the param list?
-		for _, captured := range capturedVariables {
-			capturedType := pass.TypesInfo.TypeOf(captured)
+		for _, capturedCall := range capturedCalls {
+			capturedType := pass.TypesInfo.TypeOf(capturedCall.Receiver)
 
 			if !IsPointerType(capturedType) {
 				// Prevents false negatives from captured variables that are
@@ -99,10 +125,14 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 			for _, param := range paramInterfaceTypes {
 				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
 				if types.Implements(capturedType, ifaceType) {
+					selChainString := ""
+					for _, sel := range capturedCall.Selectors {
+						selChainString += sel.Name + "."
+					}
 					pass.Reportf(
-						captured.Pos(),
-						"captured variable %s implements interface %s",
-						captured.Name, param.Interface.Name,
+						capturedCall.Receiver.Pos(),
+						"captured variable %s%s implements interface %s",
+						selChainString, capturedCall.Receiver.Name, param.Interface.Name,
 					)
 				}
 
