@@ -18,10 +18,16 @@ func doThing(callback func(tx MyInterface)) {
 	callback(&myImpl)
 }
 
+type HasMyImpl struct {
+	A MyImpl
+}
+
 func main() {
 	outer := MyImpl{}
+	outer2 := HasMyImpl{A: MyImpl{}}
 	doThing(func(inner MyInterface) {
-		outer.Do() // want "captured variable outer implements interface MyInterface"
+		outer.Do()    // want "captured variable outer implements interface MyInterface"
+		outer2.A.Do() // want "captured variable outer2.A implements interface MyInterface"
 		inner.Do()
 	})
 }
