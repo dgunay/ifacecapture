@@ -9,6 +9,8 @@ type MyInterface interface {
 
 type MyImpl struct{}
 
+var _ MyInterface = (*MyImpl)(nil)
+
 func (m *MyImpl) Do() {}
 
 func doThing(callback func(tx MyInterface)) {

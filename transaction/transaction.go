@@ -2,12 +2,14 @@ package transaction
 
 import (
 	"go/ast"
+	"go/types"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
 
 var PossiblyUnintentionalInterfaceCaptureAnalyzer *analysis.Analyzer = &analysis.Analyzer{
-	Name: "interfaceacpture",
+	Name: "interfacecapture",
 	Doc:  "Checks for possibly unintentional captures of variables implementing an interface of a parameter in a callback function.",
 	Run:  FindPossiblyUnintentionalInterfaceCaptures,
 }
@@ -31,12 +33,11 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 		if !ok {
 			return true
 		}
-		pass.Reportf(node.Pos(), "callback here")
 
 		// Step 4: gather all interface types in the param list
 		type ParamType struct {
-			Vars []*ast.Ident
-			Name string
+			Vars      []*ast.Ident
+			Interface *ast.Ident
 		}
 		var paramInterfaceTypes []ParamType
 		for _, param := range callback.Type.Params.List {
@@ -49,15 +50,11 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 				_, ok := typeSpec.Type.(*ast.InterfaceType)
 				if ok {
 					paramInterfaceTypes = append(paramInterfaceTypes, ParamType{
-						Name: ident.Name,
-						Vars: vars,
+						Interface: ident,
+						Vars:      vars,
 					})
 				}
 			}
-		}
-
-		for _, param := range paramInterfaceTypes {
-			pass.Reportf(callback.Pos(), "variables %v of interface type %s", param.Vars, param.Name)
 		}
 
 		// Step 5: gather all captured variables in the body
@@ -68,7 +65,7 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 				// Is it a variable?
 				ident := node.(*ast.Ident)
 				if ident.Obj != nil && ident.Obj.Kind == ast.Var {
-					// Was this declared outside the block?
+					// Was this declared outside the callback?
 					if ident.Obj.Decl != nil {
 						switch ident.Obj.Decl.(type) {
 						case *ast.Field, *ast.AssignStmt:
@@ -77,42 +74,40 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 								capturedVariables = append(capturedVariables, ident)
 							}
 						}
-						// these may not be variable declarations?
-						// Scope; or nil
-						// XxxSpec,
-						// FuncDecl,
-						// LabeledStmt,
 					}
-					// capturedVariables = append(capturedVariables, ident)
 				}
 			}
 			return true
 		})
 
+		// Do any of them implement interfaces in the param list?
 		for _, captured := range capturedVariables {
-			pass.Reportf(captured.Pos(), "captured variable %s", captured.Name)
+			capturedType := pass.TypesInfo.TypeOf(captured)
+
+			if !IsPointerType(capturedType) {
+				// Prevents false negatives from captured variables that are
+				// not pointers, but whose type does implement the interface.
+				capturedType = types.NewPointer(capturedType)
+			}
+
+			for _, param := range paramInterfaceTypes {
+				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
+				if types.Implements(capturedType, ifaceType) {
+					pass.Reportf(
+						captured.Pos(),
+						"captured variable %s implements interface %s",
+						captured.Name, param.Interface.Name,
+					)
+				}
+
+			}
 		}
-
-		// var capturedVariables []*ast.Ident
-		// ast.Inspect(callback.Body, func(node ast.Node) bool {
-		// 	if !IsFunctionLiteral(node) {
-		// 		return true
-		// 	}
-
-		// Step 6: gather all variables in the body
-
-		// Are there any captured variables that implement any of these
-		// interfaces?
-		// callback.Body.
-
-		pass.Reportf(node.Pos(), "function literal")
 
 		return false
 	}
 
 	for _, f := range pass.Files {
 		ast.Inspect(f, inspect)
-
 	}
 
 	return nil, nil
@@ -132,4 +127,8 @@ func IsFunctionLiteral(node ast.Node) bool {
 		return true
 	}
 	return false
+}
+
+func IsPointerType(t types.Type) bool {
+	return strings.Contains(t.String(), "*")
 }
