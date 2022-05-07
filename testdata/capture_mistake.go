@@ -21,7 +21,7 @@ func doThing(callback func(tx MyInterface)) {
 func main() {
 	outer := MyImpl{}
 	doThing(func(inner MyInterface) {
-		outer.Do() // should be inner.Do()
+		outer.Do() // want "captured variable outer implements interface MyInterface"
 		inner.Do()
 	})
 }
