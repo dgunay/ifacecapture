@@ -16,6 +16,5 @@ func TestAll(t *testing.T) {
 	}
 
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
-	analysistest.Run(t, testdata,
-		ifacecapture.PossiblyUnintentionalInterfaceCaptureAnalyzer, "")
+	analysistest.Run(t, testdata, ifacecapture.Analyzer, "")
 }

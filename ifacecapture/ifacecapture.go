@@ -5,16 +5,55 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/tools/go/analysis"
 )
 
-var PossiblyUnintentionalInterfaceCaptureAnalyzer *analysis.Analyzer = &analysis.Analyzer{
+var Analyzer *analysis.Analyzer = &analysis.Analyzer{
 	Name: "ifacecapture",
 	Doc:  "Checks for possibly unintentional captures of variables implementing an interface of a parameter in a callback function.",
-	Run:  FindPossiblyUnintentionalInterfaceCaptures,
+	Run:  run,
 }
 
-func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error) {
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return strings.Join(*i, ",")
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+// Flags
+var (
+	loglvl = "info"
+
+	// Captured usages of types implementing interfaces on the ignore list will
+	// not be reported.
+	InterfacesIgnoreList arrayFlags = arrayFlags{}
+
+	// If not empty, only captured usages of types implementing interfaces on
+	// the allow list will not be reported.
+	InterfacesAllowList arrayFlags = arrayFlags{}
+)
+
+func init() {
+	Analyzer.Flags.StringVar(&loglvl, "loglvl", loglvl, "log level")
+	Analyzer.Flags.Var(&InterfacesIgnoreList, "ignore-interfaces", "list of interfaces to ignore")
+	Analyzer.Flags.Var(&InterfacesAllowList, "allow-interfaces", "list of interfaces to allow")
+}
+
+func run(pass *analysis.Pass) (any, error) {
+	logger := logrus.New()
+
+	lvl, err := logrus.ParseLevel(loglvl)
+	if err != nil {
+		return false, err
+	}
+	logger.SetLevel(lvl)
+
 	inspect := func(node ast.Node) bool {
 		// Step 1: is this node a function call?
 		if !IsFunctionCall(node) {
@@ -70,7 +109,7 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 					if err == nil {
 						capturedCalls = append(capturedCalls, capturedCall)
 					} else {
-						// TODO: report or log error
+						logger.Error(err)
 					}
 				}
 			}
@@ -88,6 +127,10 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 			}
 
 			for _, param := range paramInterfaceTypes {
+				if !ShouldCheckInterface(param.Interface, InterfacesAllowList, InterfacesIgnoreList) {
+					continue
+				}
+
 				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
 				if types.Implements(capturedType, ifaceType) {
 					pass.Reportf(
@@ -108,6 +151,28 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 	}
 
 	return nil, nil
+}
+
+func ShouldCheckInterface(iface *ast.Ident, allowList, ignoreList []string) bool {
+	ifaceName := iface.Name
+
+	if len(allowList) > 0 {
+		for _, allow := range allowList {
+			if allow == ifaceName {
+				return true
+			}
+		}
+	}
+
+	if len(ignoreList) > 0 {
+		for _, ignore := range ignoreList {
+			if ignore == ifaceName {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func IsFunctionCall(node ast.Node) bool {

@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	singlechecker.Main(ifacecapture.PossiblyUnintentionalInterfaceCaptureAnalyzer)
+	singlechecker.Main(ifacecapture.Analyzer)
 }
