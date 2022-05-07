@@ -11,7 +11,7 @@
             "mode": "debug",
             "program": "main.go",
             "args": [
-                "testdata/bad.go"
+                "testdata/capture_mistake.go"
             ]
         }
     ]
