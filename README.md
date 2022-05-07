@@ -1,3 +1,8 @@
+# ifacecapture
+
+Go linter that tries to find possibly unintentional usage of captured variables
+implementing an inner-scoped parameter's interface.
+
 This linter was originally designed to try and find mistakes like the following
 in code implementing database transactions:
 
@@ -24,3 +29,10 @@ This linter may help you find similar patterns, where you have a callback
 function intended to aid safe usage of an interface. Unintentional captures 
 of an outer scope variable that also implements that interface often means
 that there was a mistake.
+
+## TODO:
+
+- [ ]: Logging and diagnostics
+- [ ]: More tests
+- [ ]: Check multiple interface parameters
+- [ ]: Cleaner code
