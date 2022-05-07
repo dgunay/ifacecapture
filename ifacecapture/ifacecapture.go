@@ -83,9 +83,21 @@ func run(pass *analysis.Pass) (any, error) {
 				vars := param.Names
 
 				// Is it an interface?
-				ident := param.Type.(*ast.Ident)
-				typeSpec := ident.Obj.Decl.(*ast.TypeSpec)
-				_, ok := typeSpec.Type.(*ast.InterfaceType)
+				ident, ok := param.Type.(*ast.Ident)
+				if !ok {
+					logger.Warn("parameter is not an interface")
+					continue
+				}
+				obj := ident.Obj
+				if obj == nil {
+					continue
+				}
+				typeSpec, ok := obj.Decl.(*ast.TypeSpec)
+				if !ok {
+					logger.Warn("declaration is not a type spec")
+					continue
+				}
+				_, ok = typeSpec.Type.(*ast.InterfaceType)
 				if ok {
 					paramInterfaceTypes = append(paramInterfaceTypes, ParamType{
 						Interface: ident,

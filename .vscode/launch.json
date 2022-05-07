@@ -9,9 +9,10 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "main.go",
+            "program": "go",
             "args": [
-                "testdata/capture_mistake.go"
+                "test",
+                "./ifacecapture"
             ]
         }
     ]
