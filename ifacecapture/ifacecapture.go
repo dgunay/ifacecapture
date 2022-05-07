@@ -58,7 +58,6 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
-
 		capturedCalls := []CallViaReceiver{}
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
 			switch node.(type) {
@@ -74,7 +73,6 @@ func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error
 			return true
 		})
 
-		// TODO: uncomment
 		// Do any of them implement interfaces in the param list?
 		for _, capturedCall := range capturedCalls {
 			capturedType := pass.TypesInfo.TypeOf(capturedCall.Receiver())
