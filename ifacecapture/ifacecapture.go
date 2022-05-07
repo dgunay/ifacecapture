@@ -1,18 +1,25 @@
 package ifacecapture
 
 import (
+	"bytes"
 	"go/ast"
+	"go/printer"
+	"go/token"
 	"go/types"
 	"strings"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
 var Analyzer *analysis.Analyzer = &analysis.Analyzer{
 	Name: "ifacecapture",
 	Doc:  "Checks for possibly unintentional captures of variables implementing an interface of a parameter in a callback function.",
 	Run:  run,
+	Requires: []*analysis.Analyzer{
+		inspect.Analyzer,
+	},
 }
 
 type arrayFlags []string
@@ -72,6 +79,8 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		}
 
+		logger.Debugf("Examining function %s with callback", render(pass.Fset, callExpr.Fun))
+
 		// Step 4: gather all interface types in the param list
 		type ParamType struct {
 			Vars      []*ast.Ident
@@ -80,12 +89,13 @@ func run(pass *analysis.Pass) (any, error) {
 		var paramInterfaceTypes []ParamType
 		for _, param := range callback.Type.Params.List {
 			if param.Type != nil {
+				logger.Debugf("param: %v", param)
 				vars := param.Names
 
 				// Is it an interface?
+				logger.Debugf("param type: %v", param.Type)
 				ident, ok := param.Type.(*ast.Ident)
 				if !ok {
-					logger.Warn("parameter is not an interface")
 					continue
 				}
 				obj := ident.Obj
@@ -94,7 +104,6 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 				typeSpec, ok := obj.Decl.(*ast.TypeSpec)
 				if !ok {
-					logger.Warn("declaration is not a type spec")
 					continue
 				}
 				_, ok = typeSpec.Type.(*ast.InterfaceType)
@@ -106,6 +115,12 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 			}
 		}
+
+		if len(paramInterfaceTypes) == 0 {
+			logger.Debug("No interfaces found in param list")
+			return true
+		}
+		logger.Debugf("Found interfaces %v in param list of %s", paramInterfaceTypes, render(pass.Fset, callback.Type))
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
@@ -144,6 +159,7 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 
 				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
+				logger.Debugf("Checking if %s implements %s", capturedType, param.Interface.Name)
 				if types.Implements(capturedType, ifaceType) {
 					pass.Reportf(
 						capturedCall.Receiver().Pos(),
@@ -205,4 +221,13 @@ func IsFunctionLiteral(node ast.Node) bool {
 
 func IsPointerType(t types.Type) bool {
 	return strings.Contains(t.String(), "*")
+}
+
+// render returns the pretty-print of the given node
+func render(fset *token.FileSet, x interface{}) string {
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, x); err != nil {
+		panic(err)
+	}
+	return buf.String()
 }
