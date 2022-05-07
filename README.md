@@ -8,10 +8,10 @@ type Database interface {
 }
 
 func doDatabaseStuff(db Database) {
-    db.Transaction(func(tx Database) {
+    db.Transaction(func(tx Database) { // tx is a transaction handle
         db.DoQuery() 
-        // the programmer probably meant to use the transaction handle, but
-        // accidentally used the outer scope variable
+        // the programmer probably meant to use the transaction handle "tx", but
+        // accidentally used the outer scope variable "db"
     })
 }
 ```
@@ -19,3 +19,8 @@ func doDatabaseStuff(db Database) {
 It searches for functions taking a callback, which itself takes one or 
 parameters which are of some interface type. It then searches for captures of
 outer scope variables which implement that interface.
+
+This linter may help you find similar patterns, where you have a callback
+function intended to aid safe usage of an interface. Unintentional captures 
+of an outer scope variable that also implements that interface often means
+that there was a mistake.
