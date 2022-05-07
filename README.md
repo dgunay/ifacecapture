@@ -37,3 +37,4 @@ that there was a mistake.
 - Check multiple interface parameters
 - Cleaner code
 - Configurability
+- False positive/negative instead of crashing
