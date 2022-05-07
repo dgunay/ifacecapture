@@ -32,7 +32,8 @@ that there was a mistake.
 
 ## TODO:
 
-- [ ]: Logging and diagnostics
-- [ ]: More tests
-- [ ]: Check multiple interface parameters
-- [ ]: Cleaner code
+- Logging and diagnostics
+- More tests
+- Check multiple interface parameters
+- Cleaner code
+- Configurability
