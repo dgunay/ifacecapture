@@ -1,4 +1,4 @@
-package transaction
+package ifacecapture
 
 import (
 	"go/ast"
@@ -9,12 +9,11 @@ import (
 )
 
 var PossiblyUnintentionalInterfaceCaptureAnalyzer *analysis.Analyzer = &analysis.Analyzer{
-	Name: "interfacecapture",
+	Name: "ifacecapture",
 	Doc:  "Checks for possibly unintentional captures of variables implementing an interface of a parameter in a callback function.",
 	Run:  FindPossiblyUnintentionalInterfaceCaptures,
 }
 
-// TODO: https://disaev.me/p/writing-useful-go-analysis-linter/
 func FindPossiblyUnintentionalInterfaceCaptures(pass *analysis.Pass) (any, error) {
 	inspect := func(node ast.Node) bool {
 		// Step 1: is this node a function call?
