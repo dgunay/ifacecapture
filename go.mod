@@ -1,4 +1,4 @@
-module github.com/dgunay/transaction-handle
+module github.com/dgunay/ifacecapture
 
 go 1.18
 

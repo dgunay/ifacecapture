@@ -9,7 +9,7 @@ import (
 	"go/types"
 	"strings"
 
-	"github.com/dgunay/transaction-handle/ifacecapture/util"
+	"github.com/dgunay/ifacecapture/ifacecapture/util"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"

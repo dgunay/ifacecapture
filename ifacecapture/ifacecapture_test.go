@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dgunay/transaction-handle/ifacecapture"
+	"github.com/dgunay/ifacecapture/ifacecapture"
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 

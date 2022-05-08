@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/dgunay/transaction-handle/ifacecapture"
+	"github.com/dgunay/ifacecapture/ifacecapture"
 	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
