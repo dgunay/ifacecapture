@@ -2,12 +2,14 @@ package ifacecapture
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/printer"
 	"go/token"
 	"go/types"
 	"strings"
 
+	"github.com/dgunay/transaction-handle/ifacecapture/util"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -52,6 +54,12 @@ func init() {
 	Analyzer.Flags.Var(&InterfacesAllowList, "allow-interfaces", "list of interfaces to allow")
 }
 
+type ParamType struct {
+	Vars           []*ast.Ident
+	InterfaceIdent *ast.Ident
+	InterfaceType  *types.Interface
+}
+
 func run(pass *analysis.Pass) (any, error) {
 	logger := logrus.New()
 
@@ -82,35 +90,25 @@ func run(pass *analysis.Pass) (any, error) {
 		logger.Debugf("Examining function %s with callback", render(pass.Fset, callExpr.Fun))
 
 		// Step 4: gather all interface types in the param list
-		type ParamType struct {
-			Vars      []*ast.Ident
-			Interface *ast.Ident
-		}
+
 		var paramInterfaceTypes []ParamType
 		for _, param := range callback.Type.Params.List {
 			if param.Type != nil {
-				logger.Debugf("param: %v", param)
 				vars := param.Names
 
-				// Is it an interface?
-				logger.Debugf("param type: %v", param.Type)
-				ident, ok := param.Type.(*ast.Ident)
-				if !ok {
-					continue
-				}
-				obj := ident.Obj
-				if obj == nil {
-					continue
-				}
-				typeSpec, ok := obj.Decl.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				_, ok = typeSpec.Type.(*ast.InterfaceType)
-				if ok {
+				paramType := pass.TypesInfo.TypeOf(param.Type)
+				if _, ok := paramType.Underlying().(*types.Interface); ok {
+					// May have to go forward all the way to get the ident
+					chain := NewTypeChain()
+					if err := chain.ProcessTypeChain(param.Type); err != nil {
+						logger.Errorf("Failed to process type chain: %s", err)
+						continue
+					}
+
 					paramInterfaceTypes = append(paramInterfaceTypes, ParamType{
-						Interface: ident,
-						Vars:      vars,
+						InterfaceIdent: chain.Last(),
+						InterfaceType:  paramType.Underlying().(*types.Interface),
+						Vars:           vars,
 					})
 				}
 			}
@@ -128,7 +126,7 @@ func run(pass *analysis.Pass) (any, error) {
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
 			switch node.(type) {
 			case *ast.CallExpr:
-				capturedCall := NewCallViaReceiver()
+				capturedCall := NewCallViaReceiver(pass.TypesInfo)
 
 				expr := node.(*ast.CallExpr).Fun
 				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
@@ -145,27 +143,31 @@ func run(pass *analysis.Pass) (any, error) {
 
 		// Do any of them implement interfaces in the param list?
 		for _, capturedCall := range capturedCalls {
-			capturedType := pass.TypesInfo.TypeOf(capturedCall.Receiver())
+			capturedType := capturedCall.ReceivedByType
+			logger.Debugf("Examining captured type %v", capturedType)
 
-			if !IsPointerType(capturedType) {
-				// Prevents false negatives from captured variables that are
-				// not pointers, but whose type does implement the interface.
-				capturedType = types.NewPointer(capturedType)
-			}
-
-			for _, param := range paramInterfaceTypes {
-				if !ShouldCheckInterface(param.Interface, InterfacesAllowList, InterfacesIgnoreList) {
+			for _, paramType := range paramInterfaceTypes {
+				// Don't check if the receiver is one of the function params
+				if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
+					return capturedCall.Receiver().Obj == paramVar.Obj
+				}) {
+					logger.Debugf("Skipping captured type %v because it is a param", capturedType)
 					continue
 				}
 
-				ifaceType := pass.TypesInfo.TypeOf(param.Interface).Underlying().(*types.Interface)
-				logger.Debugf("Checking if %s implements %s", capturedType, param.Interface.Name)
+				if !ShouldCheckInterface(paramType.InterfaceIdent, InterfacesAllowList, InterfacesIgnoreList) {
+					continue
+				}
+
+				ifaceType := paramType.InterfaceType
+				logger.Debugf("Checking if %s implements %s", capturedType, paramType.InterfaceIdent.Name)
 				if types.Implements(capturedType, ifaceType) {
-					pass.Reportf(
-						capturedCall.Receiver().Pos(),
-						"captured variable %s implements interface %s",
-						capturedCall.String(), param.Interface.Name,
-					)
+					Report(pass, &capturedCall, paramType)
+				} else if types.Implements(types.NewPointer(capturedType), ifaceType) {
+					// FIXME: it is unclear to me why sometimes it is necessary
+					// to convert the type to a pointer before checking if it
+					// implements the interface. Haven't yet reproduced the bug.
+					Report(pass, &capturedCall, paramType)
 				}
 
 			}
@@ -175,10 +177,26 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	for _, f := range pass.Files {
+		logger.Debugf("Examining package %s", f.Name)
 		ast.Inspect(f, inspect)
 	}
 
 	return nil, nil
+}
+
+func Report(pass *analysis.Pass, call *CallViaReceiver, paramType ParamType) {
+	identPackage := pass.TypesInfo.ObjectOf(paramType.InterfaceIdent).Pkg()
+	identString := ""
+	if pass.Pkg != identPackage {
+		identString = fmt.Sprintf("%s.", identPackage.Name())
+	}
+	identString += paramType.InterfaceIdent.Name
+
+	pass.Reportf(
+		call.Receiver().Pos(),
+		"captured variable %s implements interface %s",
+		call.String(), identString,
+	)
 }
 
 func ShouldCheckInterface(iface *ast.Ident, allowList, ignoreList []string) bool {
