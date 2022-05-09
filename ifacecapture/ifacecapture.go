@@ -81,7 +81,7 @@ func run(pass *analysis.Pass) (any, error) {
 			return true
 		}
 
-		logger.Debugf("Examining function %s with callback", render(pass.Fset, callExpr.Fun))
+		logger.Debugf("Examining function %s with callback", renderSafe(pass.Fset, callExpr.Fun))
 
 		// Step 4: gather all interface types in the param list
 
@@ -112,7 +112,7 @@ func run(pass *analysis.Pass) (any, error) {
 			logger.Debug("No interfaces found in param list")
 			return true
 		}
-		logger.Debugf("Found interfaces %v in param list of %s", paramInterfaceTypes, render(pass.Fset, callback.Type))
+		logger.Debugf("Found interfaces %v in param list of %s", paramInterfaceTypes, renderSafe(pass.Fset, callback.Type))
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
@@ -236,10 +236,19 @@ func IsPointerType(t types.Type) bool {
 }
 
 // render returns the pretty-print of the given node
-func render(fset *token.FileSet, x interface{}) string {
+func render(fset *token.FileSet, x interface{}) (string, error) {
 	var buf bytes.Buffer
 	if err := printer.Fprint(&buf, fset, x); err != nil {
-		panic(err)
+		return "", fmt.Errorf("render: %s", err)
 	}
-	return buf.String()
+	return buf.String(), nil
+}
+
+func renderSafe(fset *token.FileSet, x interface{}) string {
+	str, err := render(fset, x)
+	if err != nil {
+		return fmt.Sprintf("%T", x)
+	}
+
+	return str
 }
