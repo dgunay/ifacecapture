@@ -14,6 +14,9 @@ type CallViaReceiver struct {
 	// The type of the receiver for this call
 	ReceivedByType types.Type
 
+	// The func that this call is done on
+	Func *types.Func
+
 	// The chain of Selector expressions that lead to the function. E.g. in
 	// a.b.c.foo(), the selectors are [a, b, c].
 	Chain []*ast.Ident
@@ -36,6 +39,7 @@ func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
 		}
 
 		c.ReceivedByType = sel.Recv()
+		c.Func, _ = sel.Obj().(*types.Func)
 	}
 
 	if ident, ok := expr.X.(*ast.Ident); ok {
