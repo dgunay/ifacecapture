@@ -37,7 +37,7 @@ func (i *arrayFlags) Set(value string) error {
 
 // Flags
 var (
-	loglvl = "info"
+	Loglvl = "info"
 
 	// Captured usages of types implementing interfaces on the ignore list will
 	// not be reported.
@@ -48,12 +48,6 @@ var (
 	InterfacesAllowList arrayFlags = arrayFlags{}
 )
 
-func init() {
-	Analyzer.Flags.StringVar(&loglvl, "loglvl", loglvl, "log level")
-	Analyzer.Flags.Var(&InterfacesIgnoreList, "ignore-interfaces", "list of interfaces to ignore")
-	Analyzer.Flags.Var(&InterfacesAllowList, "allow-interfaces", "list of interfaces to allow")
-}
-
 type ParamType struct {
 	Vars           []*ast.Ident
 	InterfaceIdent *ast.Ident
@@ -63,7 +57,7 @@ type ParamType struct {
 func run(pass *analysis.Pass) (any, error) {
 	logger := logrus.New()
 
-	lvl, err := logrus.ParseLevel(loglvl)
+	lvl, err := logrus.ParseLevel(Loglvl)
 	if err != nil {
 		return false, err
 	}
