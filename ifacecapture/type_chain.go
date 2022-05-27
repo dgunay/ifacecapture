@@ -57,6 +57,9 @@ func traverseSelChain(idents *[]*ast.Ident, selExpr *ast.SelectorExpr) error {
 func (t TypeChain) IsInterface() bool {
 	// last in the chain is an interface
 	last := t.Last()
+	if last == nil {
+		return false
+	}
 
 	obj := last.Obj
 	if obj == nil {
@@ -72,5 +75,9 @@ func (t TypeChain) IsInterface() bool {
 }
 
 func (t TypeChain) Last() *ast.Ident {
+	if len(t.Types) == 0 {
+		return nil
+	}
+
 	return t.Types[len(t.Types)-1]
 }

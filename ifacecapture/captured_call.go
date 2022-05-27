@@ -1,6 +1,7 @@
 package ifacecapture
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/types"
@@ -14,6 +15,9 @@ type CallViaReceiver struct {
 	// The type of the receiver for this call
 	ReceivedByType types.Type
 
+	// The func that this call is done on
+	Func *types.Func
+
 	// The chain of Selector expressions that lead to the function. E.g. in
 	// a.b.c.foo(), the selectors are [a, b, c].
 	Chain []*ast.Ident
@@ -26,6 +30,8 @@ func NewCallViaReceiver(tinfo *types.Info) CallViaReceiver {
 	}
 }
 
+var errSkip = errors.New("skip")
+
 // ProcessSelExpr recursively processes a SelectorExpr and adds the chain of
 // Idents to the .Chain field.
 func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
@@ -36,15 +42,21 @@ func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
 		}
 
 		c.ReceivedByType = sel.Recv()
+		c.Func, _ = sel.Obj().(*types.Func)
 	}
 
-	if ident, ok := expr.X.(*ast.Ident); ok {
-		c.Chain = append(c.Chain, ident)
-	} else if selExpr, ok := expr.X.(*ast.SelectorExpr); selExpr != nil && ok {
-		err := c.ProcessSelExpr(selExpr)
-		c.Chain = append(c.Chain, selExpr.Sel)
-		return err
-	} else {
+	switch x := expr.X.(type) {
+	case *ast.Ident:
+		c.Chain = append(c.Chain, x)
+	case *ast.SelectorExpr:
+		if x != nil {
+			err := c.ProcessSelExpr(x)
+			c.Chain = append(c.Chain, x.Sel)
+			return err
+		}
+	case *ast.IndexExpr, *ast.CallExpr:
+		return errSkip
+	default:
 		return fmt.Errorf("unexpected type for SelectorExpr.X: %T", expr.X)
 	}
 
