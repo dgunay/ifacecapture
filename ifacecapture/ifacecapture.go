@@ -2,6 +2,7 @@ package ifacecapture
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -150,20 +151,23 @@ func run(pass *analysis.Pass) (any, error) {
 		// Get all CallExprs with receivers
 		capturedCalls := []CallViaReceiver{}
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
-			switch node.(type) {
-			case *ast.CallExpr:
-				capturedCall := NewCallViaReceiver(pass.TypesInfo)
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
 
-				expr := node.(*ast.CallExpr).Fun
-				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
-					err := capturedCall.ProcessSelExpr(selExpr)
-					if err == nil {
-						capturedCalls = append(capturedCalls, capturedCall)
-					} else {
-						logger.Error(err)
-					}
+			capturedCall := NewCallViaReceiver(pass.TypesInfo)
+
+			expr := call.Fun
+			if selExpr, ok := expr.(*ast.SelectorExpr); ok {
+				err := capturedCall.ProcessSelExpr(selExpr)
+				if err == nil {
+					capturedCalls = append(capturedCalls, capturedCall)
+				} else if !errors.Is(err, errSkip) {
+					logger.Error(err)
 				}
 			}
+
 			return true
 		})
 
