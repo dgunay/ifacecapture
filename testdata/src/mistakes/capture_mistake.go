@@ -13,7 +13,7 @@ var _ MyInterface = (*MyImpl)(nil)
 
 func (m *MyImpl) Do() {}
 
-func doThing(callback func(tx MyInterface)) {
+func (m *MyImpl) doThing(callback func(tx MyInterface)) {
 	myImpl := MyImpl{}
 	callback(&myImpl)
 }
@@ -31,7 +31,7 @@ func main() {
 	outer2 := HasMyImpl{A: MyImpl{}}
 	outer3 := struct{ B HasMyImpl }{B: HasMyImpl{A: MyImpl{}}}
 	outerArr := [2]MyImpl{{}, {}}
-	doThing(func(inner MyInterface) {
+	outer.doThing(func(inner MyInterface) {
 		outer.Do()              // want "captured variable outer implements interface MyInterface"
 		outer2.A.Do()           // want "captured variable outer2.A implements interface MyInterface"
 		outer3.B.A.Do()         // want "captured variable outer3.B.A implements interface MyInterface"

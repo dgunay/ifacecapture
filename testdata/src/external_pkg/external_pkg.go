@@ -2,11 +2,6 @@ package main
 
 import "external_pkg/mypkg"
 
-func doThing(callback func(tx mypkg.MyInterface)) {
-	myImpl := mypkg.MyImpl{}
-	callback(&myImpl)
-}
-
 type HasMyImpl struct {
 	A mypkg.MyImpl
 }
@@ -20,7 +15,8 @@ func main() {
 	outer2 := HasMyImpl{A: mypkg.MyImpl{}}
 	outer3 := struct{ B HasMyImpl }{B: HasMyImpl{A: mypkg.MyImpl{}}}
 	outerArr := [2]mypkg.MyImpl{{}, {}}
-	doThing(func(inner mypkg.MyInterface) {
+
+	outer.DoThing(func(inner mypkg.MyInterface) {
 		outer.Do()              // want "captured variable outer implements interface mypkg.MyInterface"
 		outer2.A.Do()           // want "captured variable outer2.A implements interface mypkg.MyInterface"
 		outer3.B.A.Do()         // want "captured variable outer3.B.A implements interface mypkg.MyInterface"

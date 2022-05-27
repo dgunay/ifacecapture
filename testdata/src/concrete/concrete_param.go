@@ -5,11 +5,11 @@ package main
 
 type MyImpl struct{}
 
-func (m *MyImpl) Do() {}
+func (m MyImpl) Do() {}
 
-func doThing(callback func(tx *MyImpl)) {
+func (m MyImpl) doThing(callback func(tx MyImpl)) {
 	myImpl := MyImpl{}
-	callback(&myImpl)
+	callback(myImpl)
 }
 
 type HasMyImpl struct {
@@ -25,12 +25,16 @@ func main() {
 	outer2 := HasMyImpl{A: MyImpl{}}
 	outer3 := struct{ B HasMyImpl }{B: HasMyImpl{A: MyImpl{}}}
 	outerArr := [2]MyImpl{{}, {}}
-	doThing(func(inner *MyImpl) {
-		outer.Do()              // want "captured variable outer is of same type as parameter inner"
-		outer2.A.Do()           // want "captured variable outer2.A is of same type as parameter inner"
-		outer3.B.A.Do()         // want "captured variable outer3.B.A is of same type as parameter inner"
+
+	outer.doThing(func(inner MyImpl) {
+		outer.Do()              // want "method call on receiver type outer not through parameter"
+		outer3.B.A.Do()         // want "method call on receiver type outer3.B.A not through parameter"
 		outerArr[0].Do()        // We don't flag this yet because it is a lot of extra work
 		outer2.GetMyImpl().Do() // We don't flag this yet because it becomes much harder to analyze where the receiver is coming from
 		inner.Do()
+	})
+
+	outer2.A.doThing(func(inner MyImpl) {
+		outer2.A.Do() // want "method call on receiver type outer2.A not through parameter"
 	})
 }
