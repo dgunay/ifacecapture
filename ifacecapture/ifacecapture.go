@@ -214,7 +214,7 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 // ReportInterface reports that `call` implements the interface `iParamType`.
-func ReportInterface(pass *analysis.Pass, call *CallViaReceiver, iParamType InterfaceParamType) {
+func ReportInterface(pass *analysis.Pass, capturedCall *CallViaReceiver, iParamType InterfaceParamType) {
 	identPackage := pass.TypesInfo.ObjectOf(iParamType.InterfaceIdent).Pkg()
 	identString := ""
 	if pass.Pkg != identPackage {
@@ -240,7 +240,6 @@ func ReportConcrete(pass *analysis.Pass, capturedCall *CallViaReceiver, paramTyp
 		capturedCall.String(), identString,
 	)
 }
-
 
 // ShouldCheckInterface returns true if the given identifier for an interface
 // is in `allowlist`, or not in `ignoreList`.
