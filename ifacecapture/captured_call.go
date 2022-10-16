@@ -51,8 +51,9 @@ func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
 	return nil
 }
 
+// Receiver returns the receiver for this call, which is the last element in
+// the chain. Will panic if the chain is empty.
 func (c CallViaReceiver) Receiver() *ast.Ident {
-	// last of the chain
 	return c.Chain[len(c.Chain)-1]
 }
 
