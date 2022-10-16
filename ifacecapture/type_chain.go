@@ -18,13 +18,12 @@ func NewTypeChain() TypeChain {
 }
 
 func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
-	switch expr.(type) {
+	switch expr := expr.(type) {
 	case *ast.Ident:
-		t.Types = append(t.Types, expr.(*ast.Ident))
+		t.Types = append(t.Types, expr)
 	case *ast.SelectorExpr:
-		selExpr := expr.(*ast.SelectorExpr)
 		idents := []*ast.Ident{}
-		err := traverseSelChain(&idents, selExpr)
+		err := traverseSelChain(&idents, expr)
 		if err != nil {
 			return err
 		}
@@ -35,6 +34,8 @@ func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
 		}
 
 		t.Types = append(t.Types, idents...)
+	case *ast.StarExpr:
+		return t.ProcessTypeChain(expr.X)
 	}
 
 	return nil
