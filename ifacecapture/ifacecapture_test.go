@@ -15,6 +15,8 @@ func TestAll(t *testing.T) {
 		t.Fatalf("Failed to get wd: %s", err)
 	}
 
+	ifacecapture.Loglvl = "debug"
+
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	analysistest.Run(t, testdata, ifacecapture.Analyzer, "./src/...")
 }
