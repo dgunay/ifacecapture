@@ -18,13 +18,12 @@ func NewTypeChain() TypeChain {
 // ProcessTypeChain traverses a chain of selector expressions like
 // mypkg.MyInterface and collects the idents of the types in the chain.
 func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
-	switch expr.(type) {
+	switch expr := expr.(type) {
 	case *ast.Ident:
-		t.Types = append(t.Types, expr.(*ast.Ident))
+		t.Types = append(t.Types, expr)
 	case *ast.SelectorExpr:
-		selExpr := expr.(*ast.SelectorExpr)
 		idents := []*ast.Ident{}
-		err := traverseSelChain(&idents, selExpr)
+		err := traverseSelChain(&idents, expr)
 		if err != nil {
 			return err
 		}
