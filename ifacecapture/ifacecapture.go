@@ -178,7 +178,8 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func Report(pass *analysis.Pass, call *CallViaReceiver, paramType ParamType) {
+// Report reports that `capturedCall` implements the interface `paramType`.
+func Report(pass *analysis.Pass, capturedCall *CallViaReceiver, paramType ParamType) {
 	identPackage := pass.TypesInfo.ObjectOf(paramType.InterfaceIdent).Pkg()
 	identString := ""
 	if pass.Pkg != identPackage {
@@ -187,12 +188,14 @@ func Report(pass *analysis.Pass, call *CallViaReceiver, paramType ParamType) {
 	identString += paramType.InterfaceIdent.Name
 
 	pass.Reportf(
-		call.Receiver().Pos(),
+		capturedCall.Receiver().Pos(),
 		"captured variable %s implements interface %s",
-		call.String(), identString,
+		capturedCall.String(), identString,
 	)
 }
 
+// ShouldCheckInterface returns true if the given identifier for an interface
+// is in `allowlist`, or not in `ignoreList`.
 func ShouldCheckInterface(iface *ast.Ident, allowList, ignoreList []string) bool {
 	ifaceName := iface.Name
 
@@ -215,6 +218,7 @@ func ShouldCheckInterface(iface *ast.Ident, allowList, ignoreList []string) bool
 	return true
 }
 
+// IsFunctionCall returns true if the given expression is of type `ast.CallExpr`.
 func IsFunctionCall(node ast.Node) bool {
 	switch node.(type) {
 	case *ast.CallExpr:
@@ -223,6 +227,7 @@ func IsFunctionCall(node ast.Node) bool {
 	return false
 }
 
+// IsFunctionLiteral returns true if the given expression is of type `ast.FuncLit`.
 func IsFunctionLiteral(node ast.Node) bool {
 	switch node.(type) {
 	case *ast.FuncLit:
@@ -231,6 +236,8 @@ func IsFunctionLiteral(node ast.Node) bool {
 	return false
 }
 
+// IsFunctionDeclaration returns true if the given type, when stringified,
+// contains a '*'.
 func IsPointerType(t types.Type) bool {
 	return strings.Contains(t.String(), "*")
 }
