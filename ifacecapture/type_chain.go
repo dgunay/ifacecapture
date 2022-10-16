@@ -12,11 +12,11 @@ type TypeChain struct {
 }
 
 func NewTypeChain() TypeChain {
-	return TypeChain{
-		Types: []*ast.Ident{},
-	}
+	return TypeChain{Types: []*ast.Ident{}}
 }
 
+// ProcessTypeChain traverses a chain of selector expressions like
+// mypkg.MyInterface and collects the idents of the types in the chain.
 func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
 	switch expr.(type) {
 	case *ast.Ident:
@@ -53,7 +53,7 @@ func traverseSelChain(idents *[]*ast.Ident, selExpr *ast.SelectorExpr) error {
 	}
 }
 
-// True if the last element of the chain is an interface.
+// IsInterface returns true if the last element of the chain is an interface.
 func (t TypeChain) IsInterface() bool {
 	// last in the chain is an interface
 	last := t.Last()
@@ -71,6 +71,7 @@ func (t TypeChain) IsInterface() bool {
 	return ok
 }
 
+// Last returns the last element in the chain. Panics if the chain is empty.
 func (t TypeChain) Last() *ast.Ident {
 	return t.Types[len(t.Types)-1]
 }
