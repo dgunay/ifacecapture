@@ -34,6 +34,8 @@ func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
 		}
 
 		t.Types = append(t.Types, idents...)
+	case *ast.StarExpr:
+		return t.ProcessTypeChain(expr.X)
 	}
 
 	return nil

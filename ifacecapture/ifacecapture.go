@@ -48,10 +48,16 @@ var (
 	InterfacesAllowList arrayFlags = arrayFlags{}
 )
 
-type ParamType struct {
+type InterfaceParamType struct {
 	Vars           []*ast.Ident
 	InterfaceIdent *ast.Ident
 	InterfaceType  *types.Interface
+}
+
+type ConcreteParamType struct {
+	Vars  []*ast.Ident
+	Ident *ast.Ident
+	Type  types.Type
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -83,15 +89,20 @@ func run(pass *analysis.Pass) (any, error) {
 
 		logger.Debugf("Examining function %s with callback", renderSafe(pass.Fset, callExpr.Fun))
 
-		// Step 4: gather all interface types in the param list
-
-		var paramInterfaceTypes []ParamType
+		// Step 4: gather all types in the param list
+		var paramInterfaceTypes []InterfaceParamType
+		var paramConcreteTypes []ConcreteParamType
 		for _, param := range callback.Type.Params.List {
 			if param.Type != nil {
 				vars := param.Names
 
 				paramType := pass.TypesInfo.TypeOf(param.Type)
-				if _, ok := paramType.Underlying().(*types.Interface); ok {
+				underlying := paramType.Underlying()
+				if IsPointerType(underlying) {
+					underlying = underlying.(*types.Pointer).Elem()
+				}
+				switch paramType := underlying.(type) {
+				case *types.Interface, *types.Named:
 					// May have to go forward all the way to get the ident
 					chain := NewTypeChain()
 					if err := chain.ProcessTypeChain(param.Type); err != nil {
@@ -99,20 +110,29 @@ func run(pass *analysis.Pass) (any, error) {
 						continue
 					}
 
-					paramInterfaceTypes = append(paramInterfaceTypes, ParamType{
-						InterfaceIdent: chain.Last(),
-						InterfaceType:  paramType.Underlying().(*types.Interface),
-						Vars:           vars,
-					})
+					if _, ok := paramType.(*types.Interface); ok {
+						paramInterfaceTypes = append(paramInterfaceTypes, InterfaceParamType{
+							InterfaceIdent: chain.Last(),
+							InterfaceType:  paramType.Underlying().(*types.Interface),
+							Vars:           vars,
+						})
+					} else {
+						paramConcreteTypes = append(paramConcreteTypes, ConcreteParamType{
+							Ident: chain.Last(),
+							Type:  paramType,
+							Vars:  vars,
+						})
+					}
 				}
 			}
 		}
 
-		if len(paramInterfaceTypes) == 0 {
-			logger.Debug("No interfaces found in param list")
+		if len(paramInterfaceTypes) == 0 && len(paramConcreteTypes) == 0 {
+			logger.Debug("No interfaces or concrete types found in param list")
 			return true
 		}
 		logger.Debugf("Found interfaces %v in param list of %s", paramInterfaceTypes, renderSafe(pass.Fset, callback.Type))
+		logger.Debugf("Found concrete types %v in param list of %s", paramConcreteTypes, renderSafe(pass.Fset, callback.Type))
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
@@ -136,6 +156,7 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 
 		// Do any of them implement interfaces in the param list?
+		// Do any of them match the concrete types in the param list?
 		for _, capturedCall := range capturedCalls {
 			capturedType := capturedCall.ReceivedByType
 			logger.Debugf("Examining captured type %v", capturedType)
@@ -156,15 +177,29 @@ func run(pass *analysis.Pass) (any, error) {
 				ifaceType := paramType.InterfaceType
 				logger.Debugf("Checking if %s implements %s", capturedType, paramType.InterfaceIdent.Name)
 				if types.Implements(capturedType, ifaceType) {
-					Report(pass, &capturedCall, paramType)
+					ReportInterface(pass, &capturedCall, paramType)
 				} else if types.Implements(types.NewPointer(capturedType), ifaceType) {
 					// FIXME: it is unclear to me why sometimes it is necessary
 					// to convert the type to a pointer before checking if it
 					// implements the interface. Haven't yet reproduced the bug.
-					Report(pass, &capturedCall, paramType)
+					ReportInterface(pass, &capturedCall, paramType)
+				}
+			}
+
+			for _, paramType := range paramConcreteTypes {
+				// Don't check if the receiver is one of the function params
+				if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
+					return capturedCall.Receiver().Obj == paramVar.Obj
+				}) {
+					logger.Debugf("Skipping captured type %v because it is a param", capturedType)
+					continue
 				}
 
+				if paramType.Type == capturedType {
+					ReportConcrete(pass, &capturedCall, paramType)
+				}
 			}
+
 		}
 
 		return false
@@ -178,14 +213,14 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// Report reports that `capturedCall` implements the interface `paramType`.
-func Report(pass *analysis.Pass, capturedCall *CallViaReceiver, paramType ParamType) {
-	identPackage := pass.TypesInfo.ObjectOf(paramType.InterfaceIdent).Pkg()
+// ReportInterface reports that `call` implements the interface `iParamType`.
+func ReportInterface(pass *analysis.Pass, call *CallViaReceiver, iParamType InterfaceParamType) {
+	identPackage := pass.TypesInfo.ObjectOf(iParamType.InterfaceIdent).Pkg()
 	identString := ""
 	if pass.Pkg != identPackage {
 		identString = fmt.Sprintf("%s.", identPackage.Name())
 	}
-	identString += paramType.InterfaceIdent.Name
+	identString += iParamType.InterfaceIdent.Name
 
 	pass.Reportf(
 		capturedCall.Receiver().Pos(),
@@ -193,6 +228,19 @@ func Report(pass *analysis.Pass, capturedCall *CallViaReceiver, paramType ParamT
 		capturedCall.String(), identString,
 	)
 }
+
+// ReportConcrete reports that the receiver of `capturedCall` is the same concrete
+// type as the type of `paramType`.
+func ReportConcrete(pass *analysis.Pass, capturedCall *CallViaReceiver, paramType ConcreteParamType) {
+	identString := paramType.Vars[0].Name
+
+	pass.Reportf(
+		capturedCall.Receiver().Pos(),
+		"captured variable %s is of same type as parameter %s",
+		capturedCall.String(), identString,
+	)
+}
+
 
 // ShouldCheckInterface returns true if the given identifier for an interface
 // is in `allowlist`, or not in `ignoreList`.
