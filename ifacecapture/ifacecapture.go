@@ -79,7 +79,18 @@ func run(pass *analysis.Pass) (any, error) {
 
 	logger.SetLevel(lvl)
 
-	inspect := func(node ast.Node) bool {
+	inspect := makeInspect(pass, logger)
+
+	for _, f := range pass.Files {
+		logger.Debugf("Examining package %s", f.Name)
+		ast.Inspect(f, inspect)
+	}
+
+	return nil, nil
+}
+
+func makeInspect(pass *analysis.Pass, logger *logrus.Logger) func(node ast.Node) bool {
+	return func(node ast.Node) bool {
 		// Step 1: is this node a function call?
 		if !IsFunctionCall(node) {
 			return true
@@ -111,80 +122,93 @@ func run(pass *analysis.Pass) (any, error) {
 
 		// Step 5: gather all captured variables in the body
 		// Get all CallExprs with receivers
-		capturedCalls := []CallViaReceiver{}
-		ast.Inspect(callback.Body, func(node ast.Node) bool {
-			if callExpr, ok := node.(*ast.CallExpr); ok {
-				capturedCall := NewCallViaReceiver(pass.TypesInfo)
-
-				expr := callExpr.Fun
-				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
-					err := capturedCall.ProcessSelExpr(selExpr)
-					if err == nil {
-						capturedCalls = append(capturedCalls, capturedCall)
-					} else {
-						logger.Error(err)
-					}
-				}
-			}
-			return true
-		})
+		capturedCalls := getCapturedVariables(pass, logger, callback)
 
 		// Do any of them implement interfaces in the param list?
 		// Do any of them match the concrete types in the param list?
-		for _, capturedCall := range capturedCalls {
-			capturedCall := capturedCall
-			capturedType := capturedCall.ReceivedByType
-			logger.Debugf("Examining captured type %v", capturedType)
-
-			for _, paramType := range paramInterfaceTypes {
-				// Don't check if the receiver is one of the function params
-				if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
-					return capturedCall.Receiver().Obj == paramVar.Obj
-				}) {
-					logger.Debugf("Skipping captured type %v because it is a param", capturedType)
-					continue
-				}
-
-				if !ShouldCheckInterface(paramType.InterfaceIdent, InterfacesAllowList, InterfacesIgnoreList) {
-					continue
-				}
-
-				ifaceType := paramType.InterfaceType
-				logger.Debugf("Checking if %s implements %s", capturedType, paramType.InterfaceIdent.Name)
-				if types.Implements(capturedType, ifaceType) {
-					ReportInterface(pass, &capturedCall, paramType)
-				} else if types.Implements(types.NewPointer(capturedType), ifaceType) {
-					// NOTE: it is unclear to me why sometimes it is necessary
-					// to convert the type to a pointer before checking if it
-					// implements the interface. Haven't yet reproduced the bug.
-					ReportInterface(pass, &capturedCall, paramType)
-				}
-			}
-
-			for _, paramType := range paramConcreteTypes {
-				// Don't check if the receiver is one of the function params
-				if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
-					return capturedCall.Receiver().Obj == paramVar.Obj
-				}) {
-					logger.Debugf("Skipping captured type %v because it is a param", capturedType)
-					continue
-				}
-
-				if paramType.Type == capturedType {
-					ReportConcrete(pass, &capturedCall, paramType)
-				}
-			}
-		}
+		findPossiblyAccidentalCaptures(
+			pass, logger, capturedCalls, paramInterfaceTypes, paramConcreteTypes,
+		)
 
 		return false
 	}
+}
 
-	for _, f := range pass.Files {
-		logger.Debugf("Examining package %s", f.Name)
-		ast.Inspect(f, inspect)
+func findPossiblyAccidentalCaptures(
+	pass *analysis.Pass,
+	logger *logrus.Logger,
+	capturedCalls []CallViaReceiver,
+	paramInterfaceTypes []InterfaceParamType,
+	paramConcreteTypes []ConcreteParamType,
+) {
+	for _, capturedCall := range capturedCalls {
+		capturedCall := capturedCall
+		capturedType := capturedCall.ReceivedByType
+		logger.Debugf("Examining captured type %v", capturedType)
+
+		for _, paramType := range paramInterfaceTypes {
+			// Don't check if the receiver is one of the function params
+			if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
+				return capturedCall.Receiver().Obj == paramVar.Obj
+			}) {
+				logger.Debugf("Skipping captured type %v because it is a param", capturedType)
+				continue
+			}
+
+			if !ShouldCheckInterface(paramType.InterfaceIdent, InterfacesAllowList, InterfacesIgnoreList) {
+				continue
+			}
+
+			ifaceType := paramType.InterfaceType
+			logger.Debugf("Checking if %s implements %s", capturedType, paramType.InterfaceIdent.Name)
+			if types.Implements(capturedType, ifaceType) {
+				ReportInterface(pass, &capturedCall, paramType)
+			} else if types.Implements(types.NewPointer(capturedType), ifaceType) {
+				// NOTE: it is unclear to me why sometimes it is necessary
+				// to convert the type to a pointer before checking if it
+				// implements the interface. Haven't yet reproduced the bug.
+				ReportInterface(pass, &capturedCall, paramType)
+			}
+		}
+
+		for _, paramType := range paramConcreteTypes {
+			// Don't check if the receiver is one of the function params
+			if util.Any(paramType.Vars, func(paramVar *ast.Ident) bool {
+				return capturedCall.Receiver().Obj == paramVar.Obj
+			}) {
+				logger.Debugf("Skipping captured type %v because it is a param", capturedType)
+				continue
+			}
+
+			if paramType.Type == capturedType {
+				ReportConcrete(pass, &capturedCall, paramType)
+			}
+		}
 	}
+}
 
-	return nil, nil
+func getCapturedVariables(
+	pass *analysis.Pass, logger *logrus.Logger, callback *ast.FuncLit,
+) []CallViaReceiver {
+	capturedCalls := []CallViaReceiver{}
+	ast.Inspect(callback.Body, func(node ast.Node) bool {
+		if callExpr, ok := node.(*ast.CallExpr); ok {
+			capturedCall := NewCallViaReceiver(pass.TypesInfo)
+
+			expr := callExpr.Fun
+			if selExpr, ok := expr.(*ast.SelectorExpr); ok {
+				err := capturedCall.ProcessSelExpr(selExpr)
+				if err == nil {
+					capturedCalls = append(capturedCalls, capturedCall)
+				} else {
+					logger.Error(err)
+				}
+			}
+		}
+		return true
+	})
+
+	return capturedCalls
 }
 
 // Given a function literal, return lists of the interface types and concrete
