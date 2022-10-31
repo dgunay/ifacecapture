@@ -1,0 +1,20 @@
+linters:
+  enable-all: true
+  disable:
+    - golint
+    - deadcode
+    - structcheck
+    - exhaustivestruct
+    - maligned
+    - interfacer
+    - varcheck
+    - nosnakecase
+    - scopelint
+    - ifshort
+    - nlreturn
+    - exhaustruct
+    - wsl
+linters-settings:
+  varnamelen:
+    ignore-type-assert-ok: true
+    ignore-map-index-ok: true
