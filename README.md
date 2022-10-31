@@ -30,6 +30,26 @@ function intended to aid safe usage of an interface. Unintentional captures
 of an outer scope variable that also implements that interface often means
 that there was a mistake.
 
+## How to test
+
+```
+go test ./... -cover -race
+```
+
+## How to release
+
+You can build releases for all platforms with GoReleaser:
+
+```bash
+rm -rf ./dist
+goreleaser build
+```
+
+To do a release using CI:
+
+1. Tag a commit on the `main` branch (should be tagged according to semver). `git tag v0.x.x`.
+2. Push tags to GitHub. `git push --tags`
+
 ## TODO:
 
 - More tests
