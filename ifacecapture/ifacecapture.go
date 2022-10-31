@@ -100,52 +100,7 @@ func run(pass *analysis.Pass) (any, error) {
 		logger.Debugf("Examining function %s with callback", renderSafe(pass.Fset, callExpr.Fun))
 
 		// Step 4: gather all types in the param list
-		var paramInterfaceTypes []InterfaceParamType
-		var paramConcreteTypes []ConcreteParamType
-		for _, param := range callback.Type.Params.List {
-			if param.Type != nil {
-				vars := param.Names
-
-				paramType := pass.TypesInfo.TypeOf(param.Type)
-				underlying := paramType.Underlying()
-				if IsPointerType(underlying) {
-					asPointer, ok := underlying.(*types.Pointer)
-					if !ok {
-						logger.Warnf("Could not cast %s to *types.Pointer", underlying)
-						continue
-					}
-					underlying = asPointer.Elem()
-				}
-				switch paramType := underlying.(type) {
-				case *types.Interface, *types.Named:
-					// May have to go forward all the way to get the ident
-					chain := NewTypeChain()
-					if err := chain.ProcessTypeChain(param.Type); err != nil {
-						logger.Errorf("Failed to process type chain: %s", err)
-						continue
-					}
-
-					if _, ok := paramType.(*types.Interface); ok {
-						underlyingInterface, ok := paramType.Underlying().(*types.Interface)
-						if !ok {
-							logger.Warnf("Could not cast %s to *types.Interface", paramType)
-							continue
-						}
-						paramInterfaceTypes = append(paramInterfaceTypes, InterfaceParamType{
-							InterfaceIdent: chain.Last(),
-							InterfaceType:  underlyingInterface,
-							Vars:           vars,
-						})
-					} else {
-						paramConcreteTypes = append(paramConcreteTypes, ConcreteParamType{
-							Ident: chain.Last(),
-							Type:  paramType,
-							Vars:  vars,
-						})
-					}
-				}
-			}
-		}
+		paramInterfaceTypes, paramConcreteTypes := getTypesInParamList(pass, logger, callback)
 
 		if len(paramInterfaceTypes) == 0 && len(paramConcreteTypes) == 0 {
 			logger.Debug("No interfaces or concrete types found in param list")
@@ -236,6 +191,65 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	return nil, nil
+}
+
+// Given a function literal, return lists of the interface types and concrete
+// types in the param list.
+func getTypesInParamList(
+	pass *analysis.Pass,
+	logger *logrus.Logger,
+	callback *ast.FuncLit,
+) ([]InterfaceParamType, []ConcreteParamType) {
+	var paramInterfaceTypes []InterfaceParamType
+	var paramConcreteTypes []ConcreteParamType
+	for _, param := range callback.Type.Params.List {
+		if param.Type == nil {
+			continue
+		}
+
+		vars := param.Names
+
+		paramType := pass.TypesInfo.TypeOf(param.Type)
+		underlying := paramType.Underlying()
+		if IsPointerType(underlying) {
+			asPointer, ok := underlying.(*types.Pointer)
+			if !ok {
+				logger.Warnf("Could not cast %s to *types.Pointer", underlying)
+				continue
+			}
+			underlying = asPointer.Elem()
+		}
+		switch paramType := underlying.(type) {
+		case *types.Interface, *types.Named:
+			// May have to go forward all the way to get the ident
+			chain := NewTypeChain()
+			if err := chain.ProcessTypeChain(param.Type); err != nil {
+				logger.Errorf("Failed to process type chain: %s", err)
+				continue
+			}
+
+			if _, ok := paramType.(*types.Interface); ok {
+				underlyingInterface, ok := paramType.Underlying().(*types.Interface)
+				if !ok {
+					logger.Warnf("Could not cast %s to *types.Interface", paramType)
+					continue
+				}
+				paramInterfaceTypes = append(paramInterfaceTypes, InterfaceParamType{
+					InterfaceIdent: chain.Last(),
+					InterfaceType:  underlyingInterface,
+					Vars:           vars,
+				})
+			} else {
+				paramConcreteTypes = append(paramConcreteTypes, ConcreteParamType{
+					Ident: chain.Last(),
+					Type:  paramType,
+					Vars:  vars,
+				})
+			}
+		}
+	}
+
+	return paramInterfaceTypes, paramConcreteTypes
 }
 
 // ReportInterface reports that `call` implements the interface `iParamType`.
