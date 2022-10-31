@@ -43,14 +43,14 @@ func (t *TypeChain) ProcessTypeChain(expr ast.Expr) error {
 
 func traverseSelChain(idents *[]*ast.Ident, selExpr *ast.SelectorExpr) error {
 	*idents = append(*idents, selExpr.Sel)
-	switch selExpr.X.(type) {
+	switch expr := selExpr.X.(type) {
 	case *ast.Ident:
-		*idents = append(*idents, selExpr.X.(*ast.Ident))
+		*idents = append(*idents, expr)
 		return nil
 	case *ast.SelectorExpr:
-		return traverseSelChain(idents, selExpr.X.(*ast.SelectorExpr))
+		return traverseSelChain(idents, expr)
 	default:
-		return fmt.Errorf("Expected identifier, got %T", selExpr.X)
+		return fmt.Errorf("expected identifier, got %T: %w", selExpr.X, ErrUnexpectedType)
 	}
 }
 

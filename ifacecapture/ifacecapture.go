@@ -126,9 +126,14 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 
 					if _, ok := paramType.(*types.Interface); ok {
+						underlyingInterface, ok := paramType.Underlying().(*types.Interface)
+						if !ok {
+							logger.Warnf("Could not cast %s to *types.Interface", paramType)
+							continue
+						}
 						paramInterfaceTypes = append(paramInterfaceTypes, InterfaceParamType{
 							InterfaceIdent: chain.Last(),
-							InterfaceType:  paramType.Underlying().(*types.Interface),
+							InterfaceType:  underlyingInterface,
 							Vars:           vars,
 						})
 					} else {
@@ -220,7 +225,6 @@ func run(pass *analysis.Pass) (any, error) {
 					ReportConcrete(pass, &capturedCall, paramType)
 				}
 			}
-
 		}
 
 		return false
@@ -304,7 +308,7 @@ func IsPointerType(t types.Type) bool {
 	return strings.Contains(t.String(), "*")
 }
 
-// render returns the pretty-print of the given node
+// render returns the pretty-print of the given node.
 func render(fset *token.FileSet, x interface{}) (string, error) {
 	var buf bytes.Buffer
 	if err := printer.Fprint(&buf, fset, x); err != nil {
