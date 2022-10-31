@@ -113,15 +113,9 @@ func run(pass *analysis.Pass) (any, error) {
 		// Get all CallExprs with receivers
 		capturedCalls := []CallViaReceiver{}
 		ast.Inspect(callback.Body, func(node ast.Node) bool {
-			switch node.(type) {
-			case *ast.CallExpr:
+			if callExpr, ok := node.(*ast.CallExpr); ok {
 				capturedCall := NewCallViaReceiver(pass.TypesInfo)
 
-				callExpr, ok := node.(*ast.CallExpr)
-				if !ok {
-					logger.Warnf("Could not cast %s to *ast.CallExpr", node)
-					return true
-				}
 				expr := callExpr.Fun
 				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
 					err := capturedCall.ProcessSelExpr(selExpr)
