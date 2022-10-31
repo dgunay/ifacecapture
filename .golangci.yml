@@ -11,3 +11,10 @@ linters:
     - nosnakecase
     - scopelint
     - ifshort
+    - nlreturn
+    - exhaustruct
+    - wsl
+linters-settings:
+  varnamelen:
+    ignore-type-assert-ok: true
+    ignore-map-index-ok: true

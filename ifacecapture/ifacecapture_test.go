@@ -10,13 +10,15 @@ import (
 )
 
 func TestAll(t *testing.T) {
-	wd, err := os.Getwd()
+	t.Parallel()
+
+	workDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get wd: %s", err)
 	}
 
 	ifacecapture.Loglvl = "debug"
 
-	testdata := filepath.Join(filepath.Dir(wd), "testdata")
+	testdata := filepath.Join(filepath.Dir(workDir), "testdata")
 	analysistest.Run(t, testdata, ifacecapture.Analyzer, "./src/...")
 }

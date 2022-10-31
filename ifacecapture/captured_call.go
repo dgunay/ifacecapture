@@ -21,10 +21,13 @@ type CallViaReceiver struct {
 
 func NewCallViaReceiver(tinfo *types.Info) CallViaReceiver {
 	return CallViaReceiver{
-		typeinfo: tinfo,
-		Chain:    []*ast.Ident{},
+		ReceivedByType: nil,
+		typeinfo:       tinfo,
+		Chain:          []*ast.Ident{},
 	}
 }
+
+var ErrNoTypeInfo = fmt.Errorf("no type information available")
 
 // ProcessSelExpr recursively processes a SelectorExpr and adds the chain of
 // Idents to the .Chain field.
@@ -32,7 +35,7 @@ func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
 	if c.ReceivedByType == nil {
 		sel := c.typeinfo.Selections[expr]
 		if sel == nil {
-			return fmt.Errorf("No type info for %s", expr)
+			return fmt.Errorf("selection %s: %w", expr, ErrNoTypeInfo)
 		}
 
 		c.ReceivedByType = sel.Recv()
@@ -45,7 +48,7 @@ func (c *CallViaReceiver) ProcessSelExpr(expr *ast.SelectorExpr) error {
 		c.Chain = append(c.Chain, selExpr.Sel)
 		return err
 	} else {
-		return fmt.Errorf("unexpected type for SelectorExpr.X: %T", expr.X)
+		return fmt.Errorf("SelectorExpr.X is type %T: %w", expr.X, ErrUnexpectedType)
 	}
 
 	return nil
@@ -57,10 +60,11 @@ func (c CallViaReceiver) Receiver() *ast.Ident {
 	return c.Chain[len(c.Chain)-1]
 }
 
-// Formats the CallViaReceiver as a string in the form "a.b.c"
+// Formats the CallViaReceiver as a string in the form "a.b.c".
 func (c CallViaReceiver) String() string {
 	selChainString := ""
 	sep := ""
+
 	for _, sel := range c.Chain {
 		selChainString += sep + sel.Name
 		sep = "."

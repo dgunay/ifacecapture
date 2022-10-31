@@ -2,6 +2,7 @@ package ifacecapture
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/printer"
@@ -15,13 +16,19 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 )
 
+//nolint:gochecknoglobals
 var Analyzer *analysis.Analyzer = &analysis.Analyzer{
 	Name: "ifacecapture",
-	Doc:  "Checks for possibly unintentional captures of variables implementing an interface of a parameter in a callback function.",
-	Run:  run,
+	Doc: "Checks for possibly unintentional captures of variables implementing " +
+		"an interface of a parameter in a callback function.",
+	Run: run,
 	Requires: []*analysis.Analyzer{
 		inspect.Analyzer,
 	},
+	Flags:            flag.FlagSet{},
+	RunDespiteErrors: false,
+	ResultType:       nil,
+	FactTypes:        nil,
 }
 
 type arrayFlags []string
@@ -35,17 +42,19 @@ func (i *arrayFlags) Set(value string) error {
 	return nil
 }
 
-// Flags
+// Flags.
+//
+//nolint:gochecknoglobals
 var (
 	Loglvl = "info"
 
 	// Captured usages of types implementing interfaces on the ignore list will
 	// not be reported.
-	InterfacesIgnoreList arrayFlags = arrayFlags{}
+	InterfacesIgnoreList = arrayFlags{}
 
 	// If not empty, only captured usages of types implementing interfaces on
 	// the allow list will not be reported.
-	InterfacesAllowList arrayFlags = arrayFlags{}
+	InterfacesAllowList = arrayFlags{}
 )
 
 type InterfaceParamType struct {
@@ -65,8 +74,9 @@ func run(pass *analysis.Pass) (any, error) {
 
 	lvl, err := logrus.ParseLevel(Loglvl)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("parse log level %s: %w", Loglvl, err)
 	}
+
 	logger.SetLevel(lvl)
 
 	inspect := func(node ast.Node) bool {
@@ -76,8 +86,8 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 
 		// Step 2: is this a call to a function with at least one arg?
-		callExpr := node.(*ast.CallExpr)
-		if len(callExpr.Args) < 1 {
+		callExpr, ok := node.(*ast.CallExpr)
+		if !ok || len(callExpr.Args) < 1 {
 			return true
 		}
 
@@ -99,7 +109,12 @@ func run(pass *analysis.Pass) (any, error) {
 				paramType := pass.TypesInfo.TypeOf(param.Type)
 				underlying := paramType.Underlying()
 				if IsPointerType(underlying) {
-					underlying = underlying.(*types.Pointer).Elem()
+					asPointer, ok := underlying.(*types.Pointer)
+					if !ok {
+						logger.Warnf("Could not cast %s to *types.Pointer", underlying)
+						continue
+					}
+					underlying = asPointer.Elem()
 				}
 				switch paramType := underlying.(type) {
 				case *types.Interface, *types.Named:
@@ -142,7 +157,12 @@ func run(pass *analysis.Pass) (any, error) {
 			case *ast.CallExpr:
 				capturedCall := NewCallViaReceiver(pass.TypesInfo)
 
-				expr := node.(*ast.CallExpr).Fun
+				callExpr, ok := node.(*ast.CallExpr)
+				if !ok {
+					logger.Warnf("Could not cast %s to *ast.CallExpr", node)
+					return true
+				}
+				expr := callExpr.Fun
 				if selExpr, ok := expr.(*ast.SelectorExpr); ok {
 					err := capturedCall.ProcessSelExpr(selExpr)
 					if err == nil {
@@ -158,6 +178,7 @@ func run(pass *analysis.Pass) (any, error) {
 		// Do any of them implement interfaces in the param list?
 		// Do any of them match the concrete types in the param list?
 		for _, capturedCall := range capturedCalls {
+			capturedCall := capturedCall
 			capturedType := capturedCall.ReceivedByType
 			logger.Debugf("Examining captured type %v", capturedType)
 
@@ -179,7 +200,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if types.Implements(capturedType, ifaceType) {
 					ReportInterface(pass, &capturedCall, paramType)
 				} else if types.Implements(types.NewPointer(capturedType), ifaceType) {
-					// FIXME: it is unclear to me why sometimes it is necessary
+					// NOTE: it is unclear to me why sometimes it is necessary
 					// to convert the type to a pointer before checking if it
 					// implements the interface. Haven't yet reproduced the bug.
 					ReportInterface(pass, &capturedCall, paramType)
@@ -267,20 +288,14 @@ func ShouldCheckInterface(iface *ast.Ident, allowList, ignoreList []string) bool
 
 // IsFunctionCall returns true if the given expression is of type `ast.CallExpr`.
 func IsFunctionCall(node ast.Node) bool {
-	switch node.(type) {
-	case *ast.CallExpr:
-		return true
-	}
-	return false
+	_, ok := node.(*ast.CallExpr)
+	return ok
 }
 
 // IsFunctionLiteral returns true if the given expression is of type `ast.FuncLit`.
 func IsFunctionLiteral(node ast.Node) bool {
-	switch node.(type) {
-	case *ast.FuncLit:
-		return true
-	}
-	return false
+	_, ok := node.(*ast.FuncLit)
+	return ok
 }
 
 // IsFunctionDeclaration returns true if the given type, when stringified,
@@ -293,7 +308,7 @@ func IsPointerType(t types.Type) bool {
 func render(fset *token.FileSet, x interface{}) (string, error) {
 	var buf bytes.Buffer
 	if err := printer.Fprint(&buf, fset, x); err != nil {
-		return "", fmt.Errorf("render: %s", err)
+		return "", fmt.Errorf("render: %w", err)
 	}
 	return buf.String(), nil
 }
